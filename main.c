@@ -4,349 +4,431 @@
 #include <ctype.h>
 #include <locale.h>
 #define BUF_SIZE 50
+#define AGENT "HiddenAgent"
 
-int getText(char ***text);
-int getSentence(char **sentence);
-void freeText(char **text, int n);
-int firstQuest(char ***text, int sentenceCount);
-int deleteStartAndEnd(char *sentence);
-int thirdQuest(char ***text, int senteceCount);
-int checkSentencePalindrom(char *sentence);
-int isPalindrom(char *word);
-int findHiddenAgent(char *sentence);
-void fourthQuest(char ***text, int sentenceCount);
-int wordSort(char *sentence);
-int wordCmp(const void *word1, const void *word2);
-int putArrayToString(char *sentence, char** wordArr, int wordCount);
-int printText(char*** text, int sentenceCount);
-int removeDuplicates(char ***text, int sentenceCount);
+typedef struct Word{
+    char *chars;
+    size_t len;
+    char separator;
+} Word;
+
+typedef struct Sentence{
+    Word *words;
+    size_t wordCount;
+    int duplicateCount;
+} Sentence;
+
+typedef struct Text{
+    Sentence *sentence;
+    size_t sentenceCount;
+} Text;
+
+void getText(Text *text);
+int readSentence(Sentence *sentence);
+int readWord(Word *word);
+void freeSentence(Sentence sentence);
+void printText(Text text);
+void printSentence(Sentence sentence);
+void freeText(Text text);
+void deletePalindrom(Text *text);
+int palindromInSentence(Sentence sentence);
+int findHiddenAgent(Text text);
+int isAgentInSentence(Sentence sentence);
+void wordSort(Sentence sentence);
+char* toString(Sentence sentence);
+size_t sentenceLen(Sentence sentence);
+void deleteSentence(Text *text, int num);
+void deleteDouble(Text *text);
+void sentenceToDeleteChars(Text *text);
+int deleteStartAndEnd(Sentence *sentence, char **string);
+Sentence parseStringToSentence(char **string);
+int sentenceCmp(const void *a, const void *b);
+void sortSentence(Text *text);
+void countDuplicate(Sentence *sentence);
 
 int main() {
     setlocale(LC_ALL, "RUS");
-    wprintf(L"Введите текст в одну строку:\n");
-    char ***text = malloc(sizeof(char*));
-    int sentenceCount = getText(text);
-    int typeOfProgram;
-    sentenceCount = removeDuplicates(text, sentenceCount);
+    wprintf(L"Введите текст одной строкой:\n");
+    Text text;
+    getText(&text);
+    deleteDouble(&text);
     wprintf(L"Повторяющиеся предложения удалены:\n");
-    printText(text, sentenceCount);
-    while(typeOfProgram != 5) {
-        wprintf(L"Выберите действие:\n");
+    printText(text);
+    int isHiddenAgentHere;
+    int sentenceNum;
+    int typeOfProgram = 0;
+    while(typeOfProgram != 5){
+        wprintf(L"Выберите режим работы программы\n");
         wprintf(L"1 - Удалить все символы в начале и конце строки так, чтобы в итоге первый и последний символ были различными (без учета регистра)\n");
         wprintf(L"2 - Отсортировать все слова в выбранном предложении в лексикографическом порядке\n");
         wprintf(L"3 - Удалить все предложения, в которых хотя бы одного слово является палиндромом\n");
         wprintf(L"4 - Вывести все предложения в которых есть слово “HiddenAgent” и которое не является первым словом\n");
         wprintf(L"5 - Закрыть программу\n");
-        int sentenceNum = 0;
         scanf("%d", &typeOfProgram);
         switch (typeOfProgram) {
             case 1:
-                sentenceCount = firstQuest(text, sentenceCount);
-                printText(text, sentenceCount);
+                sentenceToDeleteChars(&text);
+                printText(text);
                 break;
-                // если предложение полностью симметрично, то оно удаляется полностью
-                // 1 задание - пробежаться по всем предложениям. внутри предложения сравнивать первый и последний символ, а затем
-                // с помощью memmove затирать сначала первый, а потом последний символ
-                // вроде работает, остаётся тестить
             case 2:
-                wprintf(L"Выберите предложение для сортировки слов\n");
+                wprintf(L"Введите номер предложения для сортировки\n");
                 scanf("%d", &sentenceNum);
-                if (sentenceNum > sentenceCount) {
-                    wprintf(L"Выбран номер несущесвующего предложения");
+                if(sentenceNum > text.sentenceCount || sentenceNum < 1){
+                    wprintf(L"Введен номер несуществующего предложения\n");
+                }
+                else{
+                    wordSort(text.sentence[sentenceNum - 1]);
+                    printSentence(text.sentence[sentenceNum - 1]);
+                }
+                break;
+            case 3:
+                deletePalindrom(&text);
+                if(text.sentenceCount == 0){
+                    wprintf(L"В тексте не осталось предложений");
+                }
+                else {
+                    printText(text);
+                }
+                break;
+            case 4:
+                isHiddenAgentHere = findHiddenAgent(text);
+                if(isHiddenAgentHere == 0){
+                    wprintf(L"В тексе не встречено ни одного слова “HiddenAgent”");
+                }
+                break;
+            case 5:
+                wprintf(L"Выход из программы\n");
+                break;
+            case 6:
+                sortSentence(&text);
+                printText(text);
+            default:
+                wprintf(L"Введено неверное число\n");
+                break;
+        }
+        printf("\n\n");
+    }
+    freeText(text);
+    return 0;
+}
+
+void deleteSentence(Text *text, int num){
+    freeSentence(text->sentence[num]);
+    memmove(text->sentence + num, text->sentence + num + 1, (text->sentenceCount - num - 1) * sizeof(Sentence));
+    text->sentenceCount--;
+}
+
+void deleteDouble(Text *text){
+    for(int i1 = 0; i1 < text->sentenceCount - 1; i1++){
+        for(int i2 = i1 + 1; i2 < text->sentenceCount; i2++){
+            if(text->sentence[i1].wordCount != text->sentence[i2].wordCount){
+                continue;
+            }
+            int flag = 1;
+            for(int i = 0; i < text->sentence[i1].wordCount; i++){
+                if((strcasecmp(text->sentence[i1].words[i].chars, text->sentence[i2].words[i].chars)) || (text->sentence[i1].words[i].separator != text->sentence[i2].words[i].separator)){
+                    flag = 0;
                     break;
                 }
-                wordSort((*text)[sentenceNum - 1]);
-                puts((*text)[sentenceNum - 1]);
-                break;
-                //printf("%s\n", (*text)[sentenceNum - 1]);
-                // 2 задание - qsort
-                // скопировать строку и создать массив указателей на начала слов, используя strtok
-                // qsort(array, array_len, sizeof(element), strcmp)
-                // посимвольно переписать слова в строку, поставив пробелы между ними
-            case 3:
-                sentenceCount = thirdQuest(text, sentenceCount);
-                printText(text, sentenceCount);
-                break;
-                // слово из одного символа - тоже палиндром
-                // 3 задание - пробежаться по предожениям. внутри предложения strtok берёт слово и меняет проверяет на палиндром,
-                // функция возвращает логическую величину и предложение либо удаляется либо остаётся
-            case 4:
-                fourthQuest(text, sentenceCount);
-                //вывод внутри функции
-                break;
-                // 4 задание - пробегаемся по предложениям, с помощью strtok получаем слова, отслеживаем их нумирацию, если слово подходящее
-                // и не на первом месте выводим предложение
-            case 5:
-                wprintf(L"Работа программы завершена\n");
-                break;
-            default:
-                wprintf(L"Введено неверное значение\n");
-        }
-    }
-    freeText(*text, sentenceCount);
-    //удалить следующие 2 строки
-    printf("Type any simbols to close the app\n");
-    scanf("%d\n", typeOfProgram);
-    //да, вот эти
-    return 0;
-}
-
-int getText(char ***text){
-    int size = BUF_SIZE;
-    *text = (char**)malloc(sizeof(char*) * size);
-    int sentenceCount = 0;
-    char *tmp_str;
-    int strLen = 0;
-    do {
-        char **tmp;
-        if(sentenceCount == size - 2){
-            size += BUF_SIZE;
-            tmp = (char**) realloc(*text, size * sizeof(char*));
-            if(tmp == NULL){
-                wprintf(L"Ошибка выделения памяти для предложения\n");
-                freeText(*text, sentenceCount);
-                return -1;
             }
-            *text = tmp;
-        }
-        strLen = getSentence(&tmp_str);
-        if(strLen == -1){
-            freeText(*text, sentenceCount);
-            return strLen;
-        }
-        (*text)[sentenceCount++] = tmp_str;
-    }while(strLen != -2);
-    (*text)[sentenceCount] = "\0";
-    return sentenceCount; // в примере был отдельный \n для обозначения коцна ввода, т.е. в тексте могло быть \n
-    // но в задании про это не написано, поэтому у меня его нет
-}
-
-int getSentence(char **sentence){
-    int size = BUF_SIZE;
-    int n = 0;
-    *sentence = (char*) malloc(sizeof(char) * size);
-    char ch;
-    int lengthOfSentence = 0;
-    do {
-        char *tmp;
-        if(lengthOfSentence == size - 2){ // чтобы всегда можно было записать \n
-            size += BUF_SIZE;
-            tmp = (char*) realloc(*sentence, size * sizeof(char));
-            if(tmp == NULL){
-                wprintf(L"Ошибка выделения памяти\n");
-                free(*sentence);
-                return -1;
+            if(flag){
+                deleteSentence(text, i2);
             }
-            *sentence = tmp;
-        }
-        ch = (char)getchar();
-        if(ch == '\n'){
-            (*sentence)[lengthOfSentence] = '\0';
-            if((*sentence)[0] == ' ') {
-                memmove((*sentence), (*sentence) + sizeof(char), lengthOfSentence);
-            }
-            return -2;
-        }
-        (*sentence)[lengthOfSentence++] = ch;
-    }while((*sentence)[lengthOfSentence - 1] != '.'); // \n - конец ввода
-    (*sentence)[lengthOfSentence - 1] = '\0';
-    if((*sentence)[0] == ' ') {
-        lengthOfSentence--;
-        memmove((*sentence), (*sentence) + sizeof(char), lengthOfSentence);
-    }
-    lengthOfSentence -= 1;
-    return lengthOfSentence;
-}
 
-
-void freeText(char **text, int n){
-    for(int i = 0; i < n; i++){
-        free(text[i]);
-    }
-    free(text);
-}
-
-int firstQuest(char ***text, int sentenceCount){
-    int response;
-    int newCount = sentenceCount;
-    for(int i = 0; i < sentenceCount; i++){
-        response = deleteStartAndEnd((*text)[i]);
-        if(response == -1){
-            memmove(*text + i, *text + i + 1, (newCount - i - 1) * sizeof(char*));
-            newCount--;
         }
     }
-    return newCount;
 }
 
-int deleteStartAndEnd(char *sentence){
-    long len = strlen(sentence);
-    while(tolower((sentence)[0]) == tolower((sentence)[len - 1]) && (len > 0)) {
-        memmove(sentence, sentence + sizeof(char), len);
-        len--;
-        memmove(sentence + sizeof(char) * (len - 1), sentence + sizeof(char) * len, 2);
-        len--;
+int wordCmp(const void *a, const void *b){
+    const Word *word1 = (Word*) a;
+    const Word *word2 = (Word*) b;
+    int i = 0;
+    while (tolower(*(word1->chars + i)) == tolower(*(word2->chars + i))){
+        if(i == (word1->len - 1) && (word1->len == word2->len)){
+            return 0;
+        }
+        if(i == word1->len - 1){
+            return -1;
+        }
+        if(i == word2->len - 1){
+            return 1;
+        }
+        i++;
     }
-    if(len <= 0){
-        free(sentence);
-        return -1;
+    return (tolower(word1->chars[i]) - tolower(word2->chars[i]));
+}
+
+void wordSort(Sentence sentence){
+    qsort(sentence.words, sentence.wordCount, sizeof(Word), wordCmp);
+}
+
+int findHiddenAgent(Text text){
+    int flag = 0;
+    for(int i = 0; i < text.sentenceCount; i++){
+        if(isAgentInSentence(text.sentence[i])){
+            flag = 1;
+            printSentence(text.sentence[i]);
+            printf("\n");
+        }
+    }
+    return flag;
+}
+
+int isAgentInSentence(Sentence sentence){
+    for(int i = 0; i < sentence.wordCount; i++){
+        if(strcmp(sentence.words[i].chars,AGENT) == 0){
+            return 1;
+        }
     }
     return 0;
 }
 
-int thirdQuest(char ***text, int sentenceCount){
-    int newCount = sentenceCount;
-    for(int i = 0; i < newCount;){
-        if(0 == (checkSentencePalindrom((*text)[i]))){
-            i++;
-        }
-        else{
-            free((*text)[i]);
-            memmove(*text + i, *text + i + 1, (newCount - i - 1) * sizeof(char*));
-            newCount--;
-        }
-    }
-    return newCount;
-}
-
-int checkSentencePalindrom(char *sentence){
-    int len = strlen(sentence);
-    char *newSentence = malloc(sizeof(char) * (len + 1));
-    memcpy(newSentence, sentence, len + 1);
-    char *word;
-    word = strtok(newSentence, ", .\0");
-    while(word != NULL){
-        if(isPalindrom(word)) return 1;
-        word = strtok(NULL, ", .\0");
-    }
-    free(newSentence);
-    return 0;
-}
-
-int isPalindrom(char *word){
-    int len = strlen(word);
-    for(int i = 0; i < len / 2 + 1; i++){
-        if(!((word[i] == word[len - i - 1]) || (i == len - i - 1))) return 0;
+int isPalindrom(Word word){
+    for(int i = 0; i < word.len / 2 + 1; i++){
+        if(!(word.chars[i] == word.chars[word.len - i - 1] || (i == word.len - i - 1))) return 0;
     }
     return 1;
 }
 
-void fourthQuest(char ***text, int sentenceCount){
-    for(int i = 0; i < sentenceCount; i++){
-        if(findHiddenAgent((*text)[i]) == 1){
-            puts((*text)[i]);
-        }
-    }
-}
-// qwvccv dsafewrf. kgfhjdgfgyvt jsadjsh.
-
-int findHiddenAgent(char *sentence){
-    int len = strlen(sentence);
-    int currentNum = 0;
-
-    char *newSentence = malloc(sizeof(char) * (len + 1));
-    memcpy(newSentence, sentence, len + 1); // точно ли len + 1
-    char *word = strtok(newSentence, ", \0\n");
-    while(word != NULL){
-        currentNum++;
-        if((strcmp(word, "HiddenAgent") == 0) && (currentNum != 1)){
+int palindromInSentence(Sentence sentence){
+    for(int i = 0; i < sentence.wordCount; i++){
+        if(isPalindrom(sentence.words[i])) {
             return 1;
         }
-        word = strtok(NULL, ", \0\n");
     }
     return 0;
 }
 
-int wordSort(char *sentence){
+void deletePalindrom(Text *text){
+    for(int i = 0; i < text->sentenceCount;){
+        if(palindromInSentence(text->sentence[i])){
+            deleteSentence(text, i);
+        }
+        else{
+            i++;
+        }
+    }
+}
+
+void getText(Text *text){
     int size = BUF_SIZE;
-    int len = strlen(sentence);
-    char *sentenceCopy = malloc(sizeof(char) * len);
-    strcpy(sentenceCopy, sentence);
-    char** wordArr = malloc(sizeof(char*) * size);
-    char* word = strtok(sentenceCopy, ", \n");
-    int wordCount = 0;
-    while(word != NULL){ // подумать о том, при каком количестве слов надо увеличивать объём памяти
-        if(wordCount == size){
+    int sentenceStatus; // 2 = конец текста, 3 = конец текста, но последнее предложение введено без точки
+    text->sentence = malloc(BUF_SIZE * sizeof(Sentence));
+    text->sentenceCount = 0;
+    do{
+        if(text->sentenceCount == BUF_SIZE - 1){
             size += BUF_SIZE;
-            char* tmp = (char*) realloc(wordArr, size * sizeof(char*));
-            if(tmp == NULL){
-                wprintf(L"Ошибка выделения памяти для массива слов\n");
-                return -1;
-            }
-            wordArr = &tmp;
+            text->sentence = realloc(text->sentence, size * sizeof(Sentence));
         }
-        wordArr[wordCount] = word;
-        wordCount++;
-        word = strtok(NULL, ", \n");
-    }
-
-    qsort(wordArr, wordCount, sizeof(char*), wordCmp); // заменить компаратор
-
-    putArrayToString(sentence, wordArr, wordCount);
-    return 0;
+        sentenceStatus = readSentence(&text->sentence[text->sentenceCount]);
+        text->sentenceCount++;
+    }while(sentenceStatus != 2 && sentenceStatus != 3);
+    if(sentenceStatus == 2) text->sentenceCount--;
 }
 
-int putArrayToString(char *sentence, char** wordArr, int wordCount){
-    int indexSentence = 0;
-
-    for(int i = 0; i < wordCount; i++){
-        char* word = wordArr[i];
-        int lenWord = strlen(word);
-        for(int indexLetter = 0; indexLetter < lenWord; indexLetter++){
-            sentence[indexSentence++] = word[indexLetter];
+int readSentence(Sentence *sentence){
+    int wordStatus; // 0 = конец предложения, 2 = конец текста
+    int size = BUF_SIZE;
+    sentence->words = malloc(size * sizeof(Word));
+    sentence->wordCount = 0;
+    do{
+        if(sentence->wordCount == BUF_SIZE - 1){
+            size += BUF_SIZE;
+            sentence->words = realloc(sentence->words, size * sizeof(Word));
         }
-        sentence[indexSentence++] = ' ';
-        if(i == wordCount - 1){
-            sentence[indexSentence - 1] = '\0';
-        }
-    }
-    return 0;
+        wordStatus = readWord(&sentence->words[sentence->wordCount]);
+        sentence->wordCount++;
+    }while(wordStatus == 1);
+    return wordStatus;
 }
 
+int readWord(Word *word){
+    int result = 1;
+    int size = BUF_SIZE;
+    int keepGoing = 1;
+    word->chars = malloc(size * sizeof(char));
+    word->len = 0;
+    char ch;
 
-int wordCmp(const void *a, const void *b){
-    const char *word1 = *((char**) a);
-    const char *word2 = *((char**) b);
-    int i = 0;
-    int len1 = strlen(word1);
-    int len2 = strlen(word2);
-    while (tolower(*(word1 + i)) == tolower(*(word2 + i))){
-        if(i == len1 - 1 && len1 == len2){
-            return 0;
+    do{
+        ch = (char)getchar();
+        if(ch == '\n') return 2;
+    }while(ch == ' ');
+
+    do{
+        if(word->len == BUF_SIZE - 1){
+            size += BUF_SIZE;
+            word->chars = realloc(word->chars, size * sizeof(char));
         }
-        if(i == len1 - 1){
-            return 1;
+        word->chars[word->len] = ch;
+        word->len++;
+        ch = (char) getchar();
+        if(ch == '.') {
+            result = 0;
+            keepGoing = 0;
         }
-        if(i == len2 - 1){
-            return -1;
+        if(ch == ' '  || ch == ','){
+            word->separator = ch;
+            keepGoing = 0;
         }
-        i++;
-    }
-    return (tolower(word1[i]) - tolower(word2[i]));
+        if(ch == '\n'){
+            keepGoing = 0;
+            result = 3;
+        }
+    }while(keepGoing);
+    word->chars[word->len] = '\0';
+    return result;
 }
 
-int printText(char*** text, int sentenceCount){
-    if(sentenceCount == 0){
-        return -1;
+void freeText(Text text){
+    for(int i = 0; i < text.sentenceCount; i++){
+        freeSentence(text.sentence[i]);
     }
-    for(int i = 0; i < sentenceCount; i++){
-        printf("%s", (*text)[i]);
-        if(i != sentenceCount - 1) printf(". ");
+}
+
+void freeSentence(Sentence sentence){
+    for(int i = 0; i < sentence.wordCount; i++){
+        free( sentence.words[i].chars);
+    }
+}
+
+void printText(Text text){
+    for(int i = 0; i < text.sentenceCount; i++){
+        printSentence(text.sentence[i]);
+        if(i != text.sentenceCount - 1) printf(" ");
     }
     printf("\n");
+}
+
+void printSentence(Sentence sentence){
+    for(int i = 0; i < sentence.wordCount; i++){
+        if(i != sentence.wordCount - 1){
+            if(sentence.words)
+                printf("%s%c", sentence.words[i].chars, sentence.words[i].separator);
+        }
+        else{
+            printf("%s", sentence.words[i].chars);
+        }
+    }
+    printf(".");
+}
+
+size_t sentenceLen(Sentence sentence){
+    size_t len = 0;
+    for(int i = 0; i < sentence.wordCount; i++){
+        len += (sentence.words[i].len + 1);
+    }
+    return len;
+}
+
+char* toString(Sentence sentence){
+    size_t len = sentenceLen(sentence);
+    size_t index = 0;
+    char *string = malloc(sizeof(char) * len);
+    for(int i = 0; i < sentence.wordCount; i++){
+        strcpy(string + index, sentence.words[i].chars);
+        index += sentence.words[i].len;
+        string[index] = sentence.words[i].separator;
+        index++;
+    }
+    string[index - 1] = '\0';
+    return string;
+}
+
+
+
+void sentenceToDeleteChars(Text *text){
+    char **string = malloc(sizeof(char*));
+    int status;
+    for(int i = 0; i < text->sentenceCount;){
+        status = deleteStartAndEnd(&(text->sentence[i]), string);
+        if(status == -1){
+            deleteSentence(text, i);
+        }
+        else{
+            freeSentence(text->sentence[i]);
+            text->sentence[i] = parseStringToSentence(string);
+            i++;
+        }
+
+    }
+}
+
+Sentence parseStringToSentence(char **string){
+    Sentence newSentence;
+    newSentence.wordCount = 0;
+    int size = BUF_SIZE;
+    newSentence.words = malloc(sizeof(Word) * size);
+    size_t len = strlen(*string);
+    int j;
+    int i = 0;
+    while(**(string + i) == ' ' || **(string + i) == ',') i++;
+    for(; i < len; i++) {
+        if (newSentence.wordCount == BUF_SIZE - 1) {
+            size += BUF_SIZE;
+            newSentence.words = realloc(newSentence.words, size * sizeof(Word));
+        }
+        newSentence.words[newSentence.wordCount].len = 0;
+        int wordSize = BUF_SIZE;
+        newSentence.words[newSentence.wordCount].chars = malloc(wordSize * sizeof(char));
+        for (j = 0; *(*string + i + j) != ' ' && *(*string + i + j) != ',' && *(*string + i + j) != '.' &&
+                    *(*string + i + j) != '\0'; j++) {
+            if (newSentence.words[newSentence.wordCount].len == size - 2) {
+                wordSize += BUF_SIZE;
+                newSentence.words[newSentence.wordCount].chars = realloc(newSentence.words[newSentence.wordCount].chars,
+                                                                         wordSize * sizeof(char));
+            }
+            newSentence.words[newSentence.wordCount].chars[newSentence.words[newSentence.wordCount].len] = *(*string +
+                                                                                                             i + j);
+            newSentence.words[newSentence.wordCount].len++;
+        }
+        if (*(*string + i + j) == ' ' || *(*string + i + j) == ',')
+            newSentence.words[newSentence.wordCount].separator = *(*string + i + j);
+        newSentence.words[newSentence.wordCount].chars[newSentence.words[newSentence.wordCount].len] = '\0';
+        newSentence.wordCount++;
+        i += j;
+    }
+    return newSentence;
+}
+
+int deleteStartAndEnd(Sentence *sentence, char **string){
+    *string = toString(*sentence);
+    size_t len = strlen(*string);
+    while((toupper((*string)[0]) == toupper((*string)[len - 1])) && (len > 0)){
+        memmove(*string, *string + sizeof(char), len * sizeof(char));
+        len--;
+        memmove(*string + sizeof(char) * (len - 1), sentence + sizeof(char) * len, 2);
+        len--;
+        if(len <= 0) {
+            free(*string);
+            return -1;
+        }
+    }
     return 0;
 }
 
-int removeDuplicates(char ***text, int sentenceCount){
-    for(int i1 = 0; i1 < sentenceCount - 1; i1++){
-        for(int i2 = i1 + 1; i2 < sentenceCount; i2++){
-            if(!strcasecmp((*text)[i1],(*text)[i2])){
-                free((*text)[i2]);
-                memmove(*text + i2, *text + i2 + 1, (sentenceCount - i2 - 1) * sizeof(char*));
-                sentenceCount--;
-                i2--;
+
+void sortSentence(Text *text){
+    for(int i = 0; i < text->sentenceCount; i++){
+        countDuplicate(&text->sentence[i]);
+        printf("%d\n", text->sentence->duplicateCount);
+    }
+    qsort(text->sentence, text->sentenceCount, sizeof(Sentence), sentenceCmp);
+}
+
+int sentenceCmp(const void *a, const void *b){
+    Sentence *s1 = (Sentence*) a;
+    Sentence *s2 = (Sentence*) b;
+    return s1->duplicateCount - s2->duplicateCount;
+}
+
+void countDuplicate(Sentence *sentence){
+    sentence->duplicateCount = 0;
+    for(int i = 0; i < sentence->wordCount - 1; i++){
+        for(int j = i + 1; j < sentence->wordCount; j++){
+            if(strcmp(sentence->words[i].chars, sentence->words[j].chars) == 0){
+                sentence->duplicateCount++;
             }
         }
     }
-    return sentenceCount;
 }
